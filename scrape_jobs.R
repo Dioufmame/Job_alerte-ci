@@ -101,19 +101,44 @@ SOURCES <- list(
   list(name = "Novojob - Banque",   url = "https://www.novojob.com/cote-d-ivoire/offres-d-emploi/offres-par-secteur/125-banque-assurance-finance"),
 
   # --- Sites carrières directs de quelques banques (pages statiques) ---
-  list(name = "SIB",          url = "https://sib.ci/recrutement/"),
-  list(name = "NSIA Banque",  url = "https://www.nsiabanque.ci/notre-marque-employeur/nos-offres-demploi/"),
-  list(name = "BNI",          url = "https://www.bni.ci/recrutement/"),
+  list(name = "SIB",                url = "https://sib.ci/recrutement/"),
+  list(name = "NSIA Banque",        url = "https://www.nsiabanque.ci/notre-marque-employeur/nos-offres-demploi/"),
+  list(name = "BNI",                url = "https://www.bni.ci/recrutement/"),
+  list(name = "Afriland First Bank", url = "https://afrilandfirstbankci.com/careers/"),
+  list(name = "BGFIBank",           url = "https://groupebgfibank.com/emploi-et-carriere/trouver-mon-futur-emploi/"),
+  list(name = "BICICI",             url = "https://www.bicici.com/nous-connaitre/recrutement/offres-demploi/"),
+  list(name = "BOA Côte d'Ivoire",  url = "https://boacoteivoire.com/institutionnels/travailler-chez-boa/"),
+  list(name = "Orabank",            url = "https://www.orabank.net/fr/groupe/carriere/candidature-spontanee"),
 
   # --- Page générale (toutes offres, toutes entreprises confondues) ---
   # Filtrée ensuite par KEYWORD_REGEX puis par le score CV, donc pas de
   # risque de recevoir des offres hors-sujet.
-  list(name = "Emploi.ci - Toutes offres", url = "https://www.emploi.ci/recherche-jobs-cote-ivoire")
+  # NOTE: Emploi.ci bloque les requêtes automatisées (HTTP 403), probablement
+  # une protection anti-bot qui bloque les IP de serveurs cloud comme
+  # GitHub Actions. On garde la source de coeur de metier ci-dessus au cas
+  # où le blocage soit levé, et on s'appuie sur Novojob pour la couverture
+  # générale en attendant.
+  list(name = "Emploi.ci - Toutes offres", url = "https://www.emploi.ci/recherche-jobs-cote-ivoire"),
+  list(name = "Novojob - Toutes offres",   url = "https://www.novojob.com/cote-d-ivoire/offres-d-emploi")
 )
 
 # --------------------------------------------------------------------------
 # 2. FONCTIONS
 # --------------------------------------------------------------------------
+
+# Lit une page HTML à partir d'une réponse httr, avec repli automatique si
+# l'encodage n'est pas de l'UTF-8 valide (certains sites, comme bni.ci,
+# utilisent encore du Latin-1 / Windows-1252 sans le déclarer correctement)
+safe_read_html <- function(resp) {
+  raw <- httr::content(resp, as = "raw")
+  tryCatch(
+    xml2::read_html(raw),
+    error = function(e) {
+      txt <- httr::content(resp, as = "text", encoding = "ISO-8859-1")
+      xml2::read_html(txt)
+    }
+  )
+}
 
 # Rend une URL absolue si elle est relative (ex: "/offre/123" -> "https://site.com/offre/123")
 make_absolute_url <- function(href, base_url) {
@@ -133,6 +158,7 @@ scrape_source <- function(source) {
       source$url,
       httr::add_headers(
         "User-Agent" = BROWSER_UA,
+        "Accept" = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         "Accept-Language" = "fr-FR,fr;q=0.9,en;q=0.8"
       ),
       httr::timeout(25)
@@ -141,7 +167,7 @@ scrape_source <- function(source) {
       stop(sprintf("HTTP %s", httr::status_code(resp)))
     }
 
-    page  <- xml2::read_html(httr::content(resp, as = "raw"))
+    page  <- safe_read_html(resp)
     links <- page %>% html_elements("a")
 
     if (length(links) == 0) {
@@ -192,12 +218,13 @@ fetch_offer_text <- function(url) {
       url,
       httr::add_headers(
         "User-Agent" = BROWSER_UA,
+        "Accept" = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         "Accept-Language" = "fr-FR,fr;q=0.9,en;q=0.8"
       ),
       httr::timeout(25)
     )
     if (httr::status_code(resp) >= 400) return("")
-    page <- xml2::read_html(httr::content(resp, as = "raw"))
+    page <- safe_read_html(resp)
     body_node <- page %>% html_element("body")
     if (is.na(body_node)) return("")
     body_node %>% html_text2()
@@ -211,8 +238,12 @@ fetch_offer_text <- function(url) {
 # Retourne une liste avec le score (nombre de compétences en commun) et le
 # détail des compétences trouvées
 compute_match <- function(text) {
+  if (is.null(text) || length(text) == 0 || is.na(text)) text <- ""
   text_lower <- str_to_lower(text)
-  hits <- vapply(CV_SKILLS, function(p) str_detect(text_lower, p), logical(1))
+  # isTRUE() protège contre les NA (ex: texte mal encodé) qui feraient
+  # planter le if() plus bas avec "valeur manquante là où VRAI/FAUX
+  # était nécessaire"
+  hits <- vapply(CV_SKILLS, function(p) isTRUE(str_detect(text_lower, p)), logical(1))
   list(score = sum(hits), matched = SKILL_LABELS[hits])
 }
 
