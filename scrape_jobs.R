@@ -7,11 +7,17 @@
 
 suppressPackageStartupMessages({
   library(rvest)
+  library(xml2)
   library(httr)
   library(jsonlite)
   library(stringr)
   library(dplyr)
 })
+
+# User-Agent "navigateur" pour éviter d'être bloqué par les protections
+# anti-bot de certains sites (Emploi.ci notamment refuse les requêtes sans
+# en-tête de navigateur reconnu)
+BROWSER_UA <- "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 
 # --------------------------------------------------------------------------
 # 1. CONFIGURATION
@@ -88,7 +94,21 @@ SOURCES <- list(
   list(name = "Emploi.ci",  url = "https://www.emploi.ci/recrutement-big-data"),
   list(name = "Emploi.ci",  url = "https://www.emploi.ci/recrutement-data-analyst"),
   list(name = "Novojob",    url = "https://www.novojob.com/cote-d-ivoire/offres-d-emploi/business-data-analyst"),
-  list(name = "Novojob",    url = "https://www.novojob.com/cote-d-ivoire/offres-d-emploi/data-scientist")
+  list(name = "Novojob",    url = "https://www.novojob.com/cote-d-ivoire/offres-d-emploi/data-scientist"),
+
+  # --- Secteur bancaire (agrégateurs, couvrent la plupart des banques) ---
+  list(name = "Emploi.ci - Banque", url = "https://www.emploi.ci/emploi-banque"),
+  list(name = "Novojob - Banque",   url = "https://www.novojob.com/cote-d-ivoire/offres-d-emploi/offres-par-secteur/125-banque-assurance-finance"),
+
+  # --- Sites carrières directs de quelques banques (pages statiques) ---
+  list(name = "SIB",          url = "https://sib.ci/recrutement/"),
+  list(name = "NSIA Banque",  url = "https://www.nsiabanque.ci/notre-marque-employeur/nos-offres-demploi/"),
+  list(name = "BNI",          url = "https://www.bni.ci/recrutement/"),
+
+  # --- Page générale (toutes offres, toutes entreprises confondues) ---
+  # Filtrée ensuite par KEYWORD_REGEX puis par le score CV, donc pas de
+  # risque de recevoir des offres hors-sujet.
+  list(name = "Emploi.ci - Toutes offres", url = "https://www.emploi.ci/recherche-jobs-cote-ivoire")
 )
 
 # --------------------------------------------------------------------------
@@ -109,11 +129,38 @@ make_absolute_url <- function(href, base_url) {
 scrape_source <- function(source) {
   message(sprintf("Scraping %s ...", source$url))
   offers <- tryCatch({
-    page <- read_html(source$url, timeout(20))
+    resp <- httr::GET(
+      source$url,
+      httr::add_headers(
+        "User-Agent" = BROWSER_UA,
+        "Accept-Language" = "fr-FR,fr;q=0.9,en;q=0.8"
+      ),
+      httr::timeout(25)
+    )
+    if (httr::status_code(resp) >= 400) {
+      stop(sprintf("HTTP %s", httr::status_code(resp)))
+    }
+
+    page  <- xml2::read_html(httr::content(resp, as = "raw"))
     links <- page %>% html_elements("a")
 
-    titles <- links %>% html_text2()
-    hrefs  <- links %>% html_attr("href")
+    if (length(links) == 0) {
+      return(data.frame(site = character(0), titre = character(0), url = character(0)))
+    }
+
+    # Extraction noeud par noeud (plus lent mais robuste : évite les erreurs
+    # de type "STRING_ELT() ne peut être appliqué qu'à un vecteur de
+    # caractères" qui surviennent quand html_text2()/html_attr() renvoient
+    # un résultat inattendu sur certains liens malformés)
+    titles <- vapply(links, function(nd) {
+      t <- tryCatch(html_text2(nd), error = function(e) NA_character_)
+      if (is.null(t) || length(t) == 0) NA_character_ else as.character(t)[1]
+    }, character(1))
+
+    hrefs <- vapply(links, function(nd) {
+      h <- tryCatch(html_attr(nd, "href"), error = function(e) NA_character_)
+      if (is.null(h) || length(h) == 0) NA_character_ else as.character(h)[1]
+    }, character(1))
 
     df <- data.frame(
       site  = source$name,
@@ -123,7 +170,7 @@ scrape_source <- function(source) {
     )
 
     df <- df %>%
-      filter(!is.na(href), nchar(titre) > 5) %>%
+      filter(!is.na(href), !is.na(titre), nchar(titre) > 5) %>%
       filter(str_detect(str_to_lower(titre), str_to_lower(KEYWORD_REGEX))) %>%
       mutate(url = vapply(href, make_absolute_url, character(1), base_url = source$url)) %>%
       select(site, titre, url) %>%
@@ -141,7 +188,16 @@ scrape_source <- function(source) {
 # matching plus fin que le simple titre)
 fetch_offer_text <- function(url) {
   tryCatch({
-    page <- read_html(url, timeout(20))
+    resp <- httr::GET(
+      url,
+      httr::add_headers(
+        "User-Agent" = BROWSER_UA,
+        "Accept-Language" = "fr-FR,fr;q=0.9,en;q=0.8"
+      ),
+      httr::timeout(25)
+    )
+    if (httr::status_code(resp) >= 400) return("")
+    page <- xml2::read_html(httr::content(resp, as = "raw"))
     body_node <- page %>% html_element("body")
     if (is.na(body_node)) return("")
     body_node %>% html_text2()
