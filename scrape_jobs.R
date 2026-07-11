@@ -84,7 +84,13 @@ SKILL_LABELS <- c(
 
 # Nombre minimum de compétences en commun entre le CV et l'offre pour
 # qu'elle soit jugée pertinente et notifiée (ajustable via variable d'env)
-MATCH_THRESHOLD <- as.numeric(Sys.getenv("MATCH_THRESHOLD", "3"))
+# NOTE: si le secret GitHub MATCH_THRESHOLD existe mais est vide, la
+# variable d'environnement est quand même définie (à ""), donc la valeur
+# par défaut de Sys.getenv() n'est PAS utilisée. On sécurise avec un
+# contrôle explicite pour éviter un MATCH_THRESHOLD = NA qui ferait
+# planter toute la boucle de scoring plus bas.
+MATCH_THRESHOLD <- suppressWarnings(as.numeric(Sys.getenv("MATCH_THRESHOLD", "3")))
+if (is.na(MATCH_THRESHOLD)) MATCH_THRESHOLD <- 3
 
 # Liste des pages à scraper : nom du site + URL de recherche/liste
 # NOTE: si un site change sa structure HTML, ajuste juste ces URLs,
@@ -161,7 +167,7 @@ scrape_source <- function(source) {
         "Accept" = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         "Accept-Language" = "fr-FR,fr;q=0.9,en;q=0.8"
       ),
-      httr::timeout(25)
+      httr::timeout(40)
     )
     if (httr::status_code(resp) >= 400) {
       stop(sprintf("HTTP %s", httr::status_code(resp)))
@@ -221,7 +227,7 @@ fetch_offer_text <- function(url) {
         "Accept" = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         "Accept-Language" = "fr-FR,fr;q=0.9,en;q=0.8"
       ),
-      httr::timeout(25)
+      httr::timeout(40)
     )
     if (httr::status_code(resp) >= 400) return("")
     page <- safe_read_html(resp)
