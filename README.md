@@ -61,6 +61,14 @@ repository secret**. Ajoute :
 4. Ensuite, le workflow tournera automatiquement toutes les 3 heures, sans
    rien faire de plus.
 
+## Couverture des banques de Côte d'Ivoire
+
+**Sites carrières directs ajoutés** : SIB, NSIA Banque, BNI, Afriland First Bank, BGFIBank, BICICI, BOA Côte d'Ivoire, Orabank.
+
+**Banques couvertes indirectement** via les agrégateurs Emploi.ci et Novojob (catégorie "Banque") dès qu'elles y publient une offre : Ecobank, Société Générale CI, UBA, Standard Chartered, Citibank, et la plupart des autres établissements de ta liste.
+
+**Non ajoutées individuellement** : certaines banques (Ecobank notamment) utilisent un système de recrutement basé sur JavaScript (Oracle Cloud, Workday, etc.) que le scraping simple ne peut pas lire directement — leurs offres seront quand même captées si elles les republient sur Emploi.ci ou Novojob, ce qu'elles font généralement. Pour les banques plus petites de ta liste (BBG-CI, BDA, BDU-CI, BHCI, BMS, BRM-CI, BSIC-CI, CBI-CI, CNCE, DBCI, FIDELIS, GTBANK-CI, MANSA BANK, OAC, SAFCA, SCBCI, SGBCI, STABIC BANK, UBA, Citibank, Orange Bank, Versus Bank), je n'ai pas trouvé ou vérifié de page carrières fiable — donne-moi une URL précise pour n'importe laquelle et je l'ajoute.
+
 ## Sources actuellement surveillées
 
 - **Emploi.ci** et **Novojob** : recherches ciblées "data"
