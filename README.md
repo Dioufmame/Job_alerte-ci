@@ -61,6 +61,15 @@ repository secret**. Ajoute :
 4. Ensuite, le workflow tournera automatiquement toutes les 3 heures, sans
    rien faire de plus.
 
+## Sources actuellement surveillées
+
+- **Emploi.ci** et **Novojob** : recherches ciblées "data"
+- **Emploi.ci - Banque** et **Novojob - Banque** : agrégateurs qui couvrent les offres de la plupart des banques de Côte d'Ivoire (SIB, NSIA, Ecobank, Société Générale CI, BOA, Orabank, etc.) publiées sur ces plateformes
+- **SIB, NSIA Banque, BNI** : sites carrières directs de ces banques
+- **Emploi.ci - Toutes offres** : page générale, filtrée ensuite par mots-clés et par le score CV
+
+**Ajouter une entreprise ou une banque en particulier** : donne-moi l'URL de sa page carrières/recrutement, et je l'ajoute à `SOURCES` dans `scrape_jobs.R`. Attention : certains sites d'entreprise utilisent des technologies web modernes (React, Angular) qui chargent le contenu par JavaScript — le scraping simple utilisé ici ne peut pas les lire. On le saura après un premier test (le site apparaîtra en erreur ou renverra 0 offre dans les logs), et on pourra soit l'ajuster, soit s'appuyer davantage sur les agrégateurs (Emploi.ci, Novojob) qui republient déjà la plupart de ces offres.
+
 ## Matching avec ton CV
 
 Le script ne se contente pas de filtrer sur des mots-clés génériques : pour
