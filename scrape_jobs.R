@@ -5,21 +5,6 @@
 # et envoie une notification Telegram pour chaque nouvelle offre détectée.
 # ==========================================================================
 
-packages <- c(
-  "rvest",
-  "httr",
-  "jsonlite",
-  "stringr",
-  "dplyr"
-)
-
-installed <- rownames(installed.packages())
-to_install <- setdiff(packages, installed)
-
-if (length(to_install) > 0) {
-  install.packages(to_install, repos = "https://cloud.r-project.org")
-}
-
 suppressPackageStartupMessages({
   library(rvest)
   library(httr)
