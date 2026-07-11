@@ -30,6 +30,7 @@ jobs:
       - name: Installer les packages R
         run: |
           Rscript -e 'install.packages(c("rvest","httr","jsonlite","stringr","dplyr"), repos="https://cloud.r-project.org")'
+          Rscript -e 'library(rvest); library(httr); library(jsonlite); library(stringr); library(dplyr)'
 
       - name: Lancer le scraping et les alertes
         env:
