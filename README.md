@@ -72,6 +72,8 @@ repository secret**. Ajoute :
 ## Sources actuellement surveillées
 
 - **Emploi.ci** et **Novojob** : recherches ciblées "data"
+- **EmploiRapide.net** : recherche par mot-clé "data"
+- **Educarriere.ci** : page générale des offres (filtrée par mots-clés ensuite)
 - **Emploi.ci - Banque** et **Novojob - Banque** : agrégateurs qui couvrent les offres de la plupart des banques de Côte d'Ivoire (SIB, NSIA, Ecobank, Société Générale CI, BOA, Orabank, etc.) publiées sur ces plateformes
 - **SIB, NSIA Banque, BNI** : sites carrières directs de ces banques
 - **Emploi.ci - Toutes offres** : page générale, filtrée ensuite par mots-clés et par le score CV
