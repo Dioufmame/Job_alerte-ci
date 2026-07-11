@@ -27,10 +27,14 @@ jobs:
           path: ${{ env.R_LIBS_USER }}
           key: r-pkgs-${{ hashFiles('scrape_jobs.R') }}
 
+      - name: Installer les dépendances système
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libcurl4-openssl-dev libssl-dev libxml2-dev
+
       - name: Installer les packages R
         run: |
           Rscript -e 'install.packages(c("rvest","httr","jsonlite","stringr","dplyr"), repos="https://cloud.r-project.org")'
-          Rscript -e 'library(rvest); library(httr); library(jsonlite); library(stringr); library(dplyr)'
 
       - name: Lancer le scraping et les alertes
         env:
