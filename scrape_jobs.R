@@ -102,6 +102,10 @@ SOURCES <- list(
   list(name = "Novojob",    url = "https://www.novojob.com/cote-d-ivoire/offres-d-emploi/business-data-analyst"),
   list(name = "Novojob",    url = "https://www.novojob.com/cote-d-ivoire/offres-d-emploi/data-scientist"),
 
+  # --- Nouveaux sites d'emploi ---
+  list(name = "EmploiRapide", url = "https://emploirapide.net/search?q=data"),
+  list(name = "Educarriere",  url = "https://emploi.educarriere.ci/nos-offres"),
+
   # --- Secteur bancaire (agrégateurs, couvrent la plupart des banques) ---
   list(name = "Emploi.ci - Banque", url = "https://www.emploi.ci/emploi-banque"),
   list(name = "Novojob - Banque",   url = "https://www.novojob.com/cote-d-ivoire/offres-d-emploi/offres-par-secteur/125-banque-assurance-finance"),
