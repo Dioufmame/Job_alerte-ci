@@ -216,15 +216,22 @@ extract_linkedin_jobs <- function(html_content) {
 
     df$age_jours <- vapply(df$contexte, extract_offer_age_days, numeric(1))
 
+    # Info seulement (ne bloque plus l'envoi) : le texte "il y a X jours"
+    # n'est pas fiable à 100% dans les emails LinkedIn selon leur format
+    # exact. Le vrai filtre d'ancienneté se fait maintenant sur la date de
+    # réception de l'email lui-même (voir plus bas dans le script), qui est
+    # une donnée structurée fiable plutôt qu'un texte à deviner.
+    for (i in seq_len(nrow(df))) {
+      if (!is.na(df$age_jours[i])) {
+        message(sprintf("  [INFO] \"%s\" — ancienneté détectée dans le texte : %.1f jour(s)", df$titre[i], df$age_jours[i]))
+      }
+    }
+
     df <- df %>%
       filter(!is.na(href), str_detect(href, "linkedin\\.com/.*jobs/(view|comm)")) %>%
       filter(nchar(titre) > 3) %>%
       distinct(href, .keep_all = TRUE) %>%
-      filter(str_detect(str_to_lower(contexte), regex(CI_LOCATION_REGEX, ignore_case = TRUE))) %>%
-      # Garde l'offre si son ancienneté est connue ET <= 5 jours, OU si
-      # l'ancienneté n'a pas pu être détectée (par prudence, pour ne pas
-      # perdre des offres à cause d'un format de texte non reconnu)
-      filter(is.na(age_jours) | age_jours <= MAX_OFFER_AGE_DAYS)
+      filter(str_detect(str_to_lower(contexte), regex(CI_LOCATION_REGEX, ignore_case = TRUE)))
 
     df %>% select(titre, href)
   }, error = function(e) {
@@ -308,8 +315,40 @@ normalize_job_url <- function(url) {
   str_split(url, "\\?", n = 2)[[1]][1]
 }
 
+# Lit la date de réception EXACTE de l'email depuis son en-tête (champ
+# "Date:"), et retourne son ancienneté en jours. Plus précis que le filtre
+# IMAP "since()" qui ne raisonne qu'au jour près (pas à l'heure près).
+get_email_age_days <- function(id) {
+  header <- tryCatch(con$fetch_header(id, use_uid = TRUE), error = function(e) NA_character_)
+  if (is.na(header)) return(NA_real_)
+
+  date_line <- str_extract(header, "(?im)^Date:\\s*.+$")
+  if (is.na(date_line)) return(NA_real_)
+  date_str <- str_trim(str_remove(date_line, "(?i)^Date:\\s*"))
+
+  # Les dates email suivent le format RFC 5322, ex: "Wed, 09 Jul 2026 14:32:10 +0000"
+  parsed <- tryCatch(
+    as.POSIXct(date_str, format = "%a, %d %b %Y %H:%M:%S %z", tz = "UTC"),
+    error = function(e) NA
+  )
+  if (is.na(parsed)) return(NA_real_)
+
+  as.numeric(difftime(Sys.time(), parsed, units = "days"))
+}
+
 for (id in ids) {
   msg_key <- as.character(id)
+
+  # Vérification précise de la date de réception : on ignore complètement
+  # l'email s'il a plus de MAX_OFFER_AGE_DAYS jours, même si le filtre IMAP
+  # since() (moins précis, au jour près) l'a laissé passer.
+  email_age <- get_email_age_days(id)
+  if (!is.na(email_age) && email_age > MAX_OFFER_AGE_DAYS) {
+    message(sprintf("  Email #%s ignoré : reçu il y a %.1f jours (> %d jours)", id, email_age, MAX_OFFER_AGE_DAYS))
+    tryCatch(con$add_flags(id, flags = "Seen", use_uid = TRUE), error = function(e) NULL)
+    seen_ids <- c(seen_ids, msg_key)
+    next
+  }
 
   raw_body <- tryCatch(con$fetch_body(id, use_uid = TRUE), error = function(e) NA_character_)
   if (is.na(raw_body)) {
