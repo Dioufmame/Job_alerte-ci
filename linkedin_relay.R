@@ -152,7 +152,7 @@ CI_LOCATION_REGEX <- "c[oô]te d.?ivoire|abidjan|bouak[ée]|yamoussoukro|san.?pe
 
 # Nombre maximum de jours d'ancienneté toléré pour une offre (au-delà, on
 # l'ignore même si l'email lui-même est récent)
-MAX_OFFER_AGE_DAYS <- 5
+MAX_OFFER_AGE_DAYS <- 7
 
 # Extrait l'ancienneté d'une offre à partir du texte LinkedIn du type
 # "il y a 3 jours" / "il y a 2 semaines" / "il y a 1 mois" (FR) ou
@@ -251,17 +251,18 @@ con <- configure_imap(
 
 con$select_folder(name = "INBOX")
 
-# Date à partir de laquelle on considère les emails (5 jours en arrière).
-# On construit la date au format attendu par IMAP ("JJ-Mmm-AAAA", avec
-# l'abréviation du mois toujours en anglais, indépendamment de la langue du
-# système), pour éviter tout souci de locale sur le serveur GitHub Actions.
-five_days_ago <- Sys.Date() - 5
+# Date à partir de laquelle on considère les emails (7 jours en arrière,
+# aligné sur MAX_OFFER_AGE_DAYS). On construit la date au format attendu
+# par IMAP ("JJ-Mmm-AAAA", avec l'abréviation du mois toujours en anglais,
+# indépendamment de la langue du système), pour éviter tout souci de
+# locale sur le serveur GitHub Actions.
+seven_days_ago <- Sys.Date() - 7
 MONTH_ABBR_EN <- c("Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec")
 date_since <- sprintf(
   "%02d-%s-%d",
-  as.integer(format(five_days_ago, "%d")),
-  MONTH_ABBR_EN[as.integer(format(five_days_ago, "%m"))],
-  as.integer(format(five_days_ago, "%Y"))
+  as.integer(format(seven_days_ago, "%d")),
+  MONTH_ABBR_EN[as.integer(format(seven_days_ago, "%m"))],
+  as.integer(format(seven_days_ago, "%Y"))
 )
 
 # Cherche les emails non lus, envoyés spécifiquement par le système
