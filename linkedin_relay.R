@@ -71,18 +71,26 @@ send_telegram <- function(text) {
 
 # Décode un fragment encodé en quoted-printable (format email courant pour
 # le HTML), ex: "D=C3=A9velopper" -> "Développer"
+# NOTE: les caractères accentués UTF-8 sont codés sur PLUSIEURS octets
+# consécutifs (ex: "é" = les 2 octets =C3=A9). Il faut les regrouper avant
+# de les convertir, sinon la conversion octet-par-octet produit des
+# séquences invalides et fait planter gsub().
 decode_quoted_printable <- function(txt) {
   txt <- gsub("=\r?\n", "", txt)  # sauts de ligne "mous" (soft line breaks)
-  matches <- gregexpr("=[0-9A-Fa-f]{2}", txt)
-  decoded <- txt
-  m <- regmatches(txt, matches)[[1]]
-  if (length(m) > 0) {
-    for (code in unique(m)) {
-      byte_val <- strtoi(substring(code, 2), base = 16L)
-      decoded <- gsub(code, rawToChar(as.raw(byte_val)), decoded, fixed = TRUE)
-    }
-  }
-  decoded
+  pattern <- "(=[0-9A-Fa-f]{2})+"  # un ou plusieurs octets consécutifs
+  m <- gregexpr(pattern, txt, perl = TRUE)
+  regmatches(txt, m) <- lapply(regmatches(txt, m), function(runs) {
+    vapply(runs, function(run) {
+      hex_codes <- regmatches(run, gregexpr("[0-9A-Fa-f]{2}", run, perl = TRUE))[[1]]
+      bytes <- as.raw(strtoi(hex_codes, base = 16L))
+      tryCatch({
+        s <- rawToChar(bytes)
+        Encoding(s) <- "UTF-8"
+        s
+      }, error = function(e) "")
+    }, character(1))
+  })
+  txt
 }
 
 # Extrait la partie HTML d'un email brut multipart et la décode
@@ -122,7 +130,14 @@ extract_html_part <- function(raw_body) {
   content
 }
 
-# Extrait les offres (titre + lien) d'un HTML d'email LinkedIn
+# Villes/mentions qui indiquent une offre basée en Côte d'Ivoire
+CI_LOCATION_REGEX <- "c[oô]te d.?ivoire|abidjan|bouak[ée]|yamoussoukro|san.?pedro|korhogo|daloa|man\\b|ivory coast"
+
+# Extrait les offres (titre + lien) d'un HTML d'email LinkedIn, en ne
+# gardant que celles situées en Côte d'Ivoire (recherche du nom du pays ou
+# d'une grande ville ivoirienne dans le texte qui entoure le lien de
+# l'offre, puisque LinkedIn affiche généralement la localisation juste à
+# côté du titre du poste dans ses emails).
 extract_linkedin_jobs <- function(html_content) {
   tryCatch({
     page  <- xml2::read_html(html_content)
@@ -131,12 +146,32 @@ extract_linkedin_jobs <- function(html_content) {
     hrefs  <- links %>% html_attr("href")
     titles <- links %>% html_text2()
 
-    df <- data.frame(titre = str_squish(titles), href = hrefs, stringsAsFactors = FALSE)
+    # Contexte élargi : on remonte jusqu'à 3 niveaux d'ancêtres HTML autour
+    # de chaque lien pour y chercher la mention de localisation
+    context_texts <- vapply(links, function(nd) {
+      ctx <- nd
+      for (i in 1:3) {
+        parent <- tryCatch(xml2::xml_parent(ctx), error = function(e) NULL)
+        if (is.null(parent) || length(parent) == 0) break
+        ctx <- parent
+      }
+      tryCatch(html_text2(ctx), error = function(e) "")
+    }, character(1))
+
+    df <- data.frame(
+      titre    = str_squish(titles),
+      href     = hrefs,
+      contexte = context_texts,
+      stringsAsFactors = FALSE
+    )
+
     df <- df %>%
       filter(!is.na(href), str_detect(href, "linkedin\\.com/.*jobs/(view|comm)")) %>%
       filter(nchar(titre) > 3) %>%
-      distinct(href, .keep_all = TRUE)
-    df
+      distinct(href, .keep_all = TRUE) %>%
+      filter(str_detect(str_to_lower(contexte), regex(CI_LOCATION_REGEX, ignore_case = TRUE)))
+
+    df %>% select(titre, href)
   }, error = function(e) {
     data.frame(titre = character(0), href = character(0))
   })
@@ -154,12 +189,32 @@ con <- configure_imap(
 
 con$select_folder(name = "INBOX")
 
-# Cherche les emails non lus envoyés par LinkedIn (alertes emploi)
+# Date à partir de laquelle on considère les emails (5 jours en arrière).
+# On construit la date au format attendu par IMAP ("JJ-Mmm-AAAA", avec
+# l'abréviation du mois toujours en anglais, indépendamment de la langue du
+# système), pour éviter tout souci de locale sur le serveur GitHub Actions.
+five_days_ago <- Sys.Date() - 5
+MONTH_ABBR_EN <- c("Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec")
+date_since <- sprintf(
+  "%02d-%s-%d",
+  as.integer(format(five_days_ago, "%d")),
+  MONTH_ABBR_EN[as.integer(format(five_days_ago, "%m"))],
+  as.integer(format(five_days_ago, "%Y"))
+)
+
+# Cherche les emails non lus, envoyés spécifiquement par le système
+# d'alertes emploi de LinkedIn (et non toutes ses notifications), reçus au
+# cours des 5 derniers jours seulement (les offres plus anciennes ne sont
+# plus pertinentes)
 ids <- tryCatch(
   con$search(
     AND(
-      string(expr = "linkedin.com", where = "FROM"),
-      flag(name = "UNSEEN")
+      OR(
+        string(expr = "jobalerts-noreply@linkedin.com", where = "FROM"),
+        string(expr = "jobs-noreply@linkedin.com", where = "FROM")
+      ),
+      flag(name = "UNSEEN"),
+      since(date_char = date_since)
     )
   ),
   error = function(e) {
@@ -173,7 +228,18 @@ if (length(ids) == 0) {
   quit(save = "no", status = 0)
 }
 
-message(sprintf("%d email(s) LinkedIn non lu(s) trouvé(s).", length(ids)))
+# Limite de sécurité : on ne traite qu'un nombre raisonnable d'emails par
+# passage, pour ne pas noyer Telegram de messages d'un coup si beaucoup
+# d'emails non lus se sont accumulés (ex: premier lancement). Le reste sera
+# traité automatiquement aux passages suivants (toutes les 3h), puisqu'on
+# retraite les plus anciens en premier.
+MAX_PER_RUN <- 15
+if (length(ids) > MAX_PER_RUN) {
+  message(sprintf("%d emails non lus trouvés, traitement des %d plus anciens ce passage-ci (le reste suivra aux prochains passages).", length(ids), MAX_PER_RUN))
+  ids <- head(ids, MAX_PER_RUN)
+}
+
+message(sprintf("%d email(s) LinkedIn à traiter ce passage.", length(ids)))
 
 seen_ids <- load_seen()
 n_sent <- 0
