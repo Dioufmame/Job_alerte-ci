@@ -120,6 +120,15 @@ SOURCES <- list(
   list(name = "BOA Côte d'Ivoire",  url = "https://boacoteivoire.com/institutionnels/travailler-chez-boa/"),
   list(name = "Orabank",            url = "https://www.orabank.net/fr/groupe/carriere/candidature-spontanee"),
 
+  # --- Grandes entreprises (pages "entreprise" Novojob, plus fiables que
+  # de deviner le site propre de chaque société) ---
+  list(name = "Orange CI (Novojob)",   url = "https://www.novojob.com/entreprise/orange-ci/offres-d-emploi"),
+  list(name = "Unilever CI (Novojob)", url = "https://www.novojob.com/cote-d-ivoire/entreprise/unilever-4/offres-d-emploi"),
+  list(name = "Nestlé CI (Novojob)",   url = "https://www.novojob.com/cote-d-ivoire/entreprise/nestle-2/offres-d-emploi"),
+  list(name = "SOLIBRA (Novojob)",     url = "https://www.novojob.com/cote-d-ivoire/entreprise/solibra-societe-de-limonaderies-et-de-brasseries-d-afrique/offres-d-emploi"),
+  list(name = "BICICI (Novojob)",      url = "https://www.novojob.com/cote-d-ivoire/entreprise/bicici/offres-d-emploi"),
+  list(name = "SODECI",                url = "https://sodeci.mycv.tech/"),
+
   # --- Page générale (toutes offres, toutes entreprises confondues) ---
   # Filtrée ensuite par KEYWORD_REGEX puis par le score CV, donc pas de
   # risque de recevoir des offres hors-sujet.
