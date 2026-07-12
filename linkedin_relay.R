@@ -36,9 +36,26 @@ if (GMAIL_ADDRESS == "" || GMAIL_APP_PASSWORD == "" ||
 # flag IMAP "\Seen", au cas où le marquage échouerait sur un run)
 SEEN_FILE <- "data/seen_linkedin_emails.json"
 
+# Fichier qui garde la mémoire des OFFRES déjà envoyées sur Telegram (par
+# lien). Nécessaire en plus de SEEN_FILE, car LinkedIn republie parfois la
+# même offre dans plusieurs emails différents (jours différents) : sans
+# cette mémoire, la même offre pourrait être envoyée plusieurs fois.
+SEEN_JOBS_FILE <- "data/seen_linkedin_job_urls.json"
+
 # --------------------------------------------------------------------------
 # 2. FONCTIONS
 # --------------------------------------------------------------------------
+
+load_seen_jobs <- function() {
+  if (!file.exists(SEEN_JOBS_FILE)) return(character(0))
+  tryCatch(unlist(fromJSON(SEEN_JOBS_FILE)), error = function(e) character(0))
+}
+
+save_seen_jobs <- function(seen_job_urls) {
+  seen_job_urls <- tail(unique(seen_job_urls), 1000)
+  dir.create(dirname(SEEN_JOBS_FILE), showWarnings = FALSE, recursive = TRUE)
+  write(toJSON(seen_job_urls, auto_unbox = FALSE), SEEN_JOBS_FILE)
+}
 
 load_seen <- function() {
   if (!file.exists(SEEN_FILE)) return(character(0))
@@ -133,11 +150,43 @@ extract_html_part <- function(raw_body) {
 # Villes/mentions qui indiquent une offre basée en Côte d'Ivoire
 CI_LOCATION_REGEX <- "c[oô]te d.?ivoire|abidjan|bouak[ée]|yamoussoukro|san.?pedro|korhogo|daloa|man\\b|ivory coast"
 
+# Nombre maximum de jours d'ancienneté toléré pour une offre (au-delà, on
+# l'ignore même si l'email lui-même est récent)
+MAX_OFFER_AGE_DAYS <- 5
+
+# Extrait l'ancienneté d'une offre à partir du texte LinkedIn du type
+# "il y a 3 jours" / "il y a 2 semaines" / "il y a 1 mois" (FR) ou
+# "3 days ago" / "2 weeks ago" / "1 month ago" (EN, au cas où le compte
+# LinkedIn serait en anglais). Retourne NA si aucun motif n'est trouvé
+# (dans ce cas, l'offre est conservée par prudence, voir README).
+extract_offer_age_days <- function(context) {
+  ctx <- str_to_lower(context)
+
+  if (str_detect(ctx, "il y a moins d|less than a|just now|à l'instant")) return(0)
+
+  m <- str_match(ctx, "il y a\\s+(\\d+)\\s*(minute|min|heure|h\\b|jour|j\\b|semaine|sem|mois)")
+  if (is.na(m[1, 1])) {
+    m <- str_match(ctx, "(\\d+)\\s*(minute|hour|h\\b|day|d\\b|week|wk|month|mo\\b)s?\\s+ago")
+  }
+  if (is.na(m[1, 1])) return(NA_real_)
+
+  n    <- as.numeric(m[1, 2])
+  unit <- m[1, 3]
+  switch(unit,
+    "minute" = n / 1440, "min" = n / 1440,
+    "heure" = n / 24, "hour" = n / 24, "h" = n / 24,
+    "jour" = n, "j" = n, "day" = n, "d" = n,
+    "semaine" = n * 7, "sem" = n * 7, "week" = n * 7, "wk" = n * 7,
+    "mois" = n * 30, "month" = n * 30, "mo" = n * 30,
+    NA_real_
+  )
+}
+
 # Extrait les offres (titre + lien) d'un HTML d'email LinkedIn, en ne
-# gardant que celles situées en Côte d'Ivoire (recherche du nom du pays ou
-# d'une grande ville ivoirienne dans le texte qui entoure le lien de
-# l'offre, puisque LinkedIn affiche généralement la localisation juste à
-# côté du titre du poste dans ses emails).
+# gardant que celles situées en Côte d'Ivoire ET publiées il y a moins de
+# MAX_OFFER_AGE_DAYS jours (recherche dans le texte qui entoure le lien de
+# l'offre, puisque LinkedIn affiche généralement la localisation et
+# l'ancienneté juste à côté du titre du poste dans ses emails).
 extract_linkedin_jobs <- function(html_content) {
   tryCatch({
     page  <- xml2::read_html(html_content)
@@ -147,7 +196,7 @@ extract_linkedin_jobs <- function(html_content) {
     titles <- links %>% html_text2()
 
     # Contexte élargi : on remonte jusqu'à 3 niveaux d'ancêtres HTML autour
-    # de chaque lien pour y chercher la mention de localisation
+    # de chaque lien pour y chercher la localisation et l'ancienneté
     context_texts <- vapply(links, function(nd) {
       ctx <- nd
       for (i in 1:3) {
@@ -165,11 +214,17 @@ extract_linkedin_jobs <- function(html_content) {
       stringsAsFactors = FALSE
     )
 
+    df$age_jours <- vapply(df$contexte, extract_offer_age_days, numeric(1))
+
     df <- df %>%
       filter(!is.na(href), str_detect(href, "linkedin\\.com/.*jobs/(view|comm)")) %>%
       filter(nchar(titre) > 3) %>%
       distinct(href, .keep_all = TRUE) %>%
-      filter(str_detect(str_to_lower(contexte), regex(CI_LOCATION_REGEX, ignore_case = TRUE)))
+      filter(str_detect(str_to_lower(contexte), regex(CI_LOCATION_REGEX, ignore_case = TRUE))) %>%
+      # Garde l'offre si son ancienneté est connue ET <= 5 jours, OU si
+      # l'ancienneté n'a pas pu être détectée (par prudence, pour ne pas
+      # perdre des offres à cause d'un format de texte non reconnu)
+      filter(is.na(age_jours) | age_jours <= MAX_OFFER_AGE_DAYS)
 
     df %>% select(titre, href)
   }, error = function(e) {
@@ -242,7 +297,16 @@ if (length(ids) > MAX_PER_RUN) {
 message(sprintf("%d email(s) LinkedIn à traiter ce passage.", length(ids)))
 
 seen_ids <- load_seen()
+seen_job_urls <- load_seen_jobs()
 n_sent <- 0
+n_skipped_dup <- 0
+
+# Normalise une URL LinkedIn pour la comparaison (enlève les paramètres de
+# tracking après le "?", qui changent à chaque email pour la même offre et
+# empêcheraient sinon de la reconnaître comme déjà envoyée)
+normalize_job_url <- function(url) {
+  str_split(url, "\\?", n = 2)[[1]][1]
+}
 
 for (id in ids) {
   msg_key <- as.character(id)
@@ -258,6 +322,11 @@ for (id in ids) {
     message(sprintf("  Pas de contenu HTML exploitable dans l'email #%s", id))
   } else {
     jobs <- extract_linkedin_jobs(html_content)
+    jobs_avant_dedup <- nrow(jobs)
+    jobs$href_normalise <- vapply(jobs$href, normalize_job_url, character(1))
+    jobs <- jobs %>% filter(!href_normalise %in% seen_job_urls)
+    n_skipped_dup <- n_skipped_dup + (jobs_avant_dedup - nrow(jobs))
+
     if (nrow(jobs) > 0) {
       for (i in seq_len(nrow(jobs))) {
         job <- jobs[i, ]
@@ -267,6 +336,7 @@ for (id in ids) {
         )
         send_telegram(msg)
         n_sent <- n_sent + 1
+        seen_job_urls <- c(seen_job_urls, job$href_normalise)
         Sys.sleep(1)
       }
     } else {
@@ -282,4 +352,5 @@ for (id in ids) {
 }
 
 save_seen(seen_ids)
-message(sprintf("Terminé. %d offre(s) envoyée(s) sur Telegram.", n_sent))
+save_seen_jobs(seen_job_urls)
+message(sprintf("Terminé. %d offre(s) envoyée(s) sur Telegram, %d doublon(s) ignoré(s).", n_sent, n_skipped_dup))
