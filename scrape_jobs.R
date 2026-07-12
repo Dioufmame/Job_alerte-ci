@@ -314,11 +314,21 @@ if (nrow(new_offers) > 0) {
     full_text   <- paste(offer$titre, detail_text)
     match       <- compute_match(full_text)
 
-    if (match$score >= MATCH_THRESHOLD) {
+    # Envoi automatique si le mot "data" ou "données" apparaît explicitement
+    # dans le titre ou la description de l'offre, même si le score de
+    # correspondance CV est en dessous du seuil habituel.
+    has_data_keyword <- isTRUE(str_detect(str_to_lower(full_text), "\\bdata\\b|donn[ée]es?"))
+
+    if (match$score >= MATCH_THRESHOLD || has_data_keyword) {
       matched_str <- paste(match$matched, collapse = ", ")
+      if (has_data_keyword && match$score < MATCH_THRESHOLD) {
+        raison <- sprintf("🔎 Mot-clé \"data\"/\"données\" détecté dans l'annonce (score CV : %d/%.0f, sous le seuil mais envoyé quand même)", match$score, MATCH_THRESHOLD)
+      } else {
+        raison <- sprintf("✅ Score : %d compétences en commun (%s)", match$score, matched_str)
+      }
       msg <- sprintf(
-        "🔔 <b>Offre DATA compatible avec ton profil</b>\n\n📌 %s\n🏷️ Source : %s\n✅ Score : %d compétences en commun (%s)\n🔗 %s",
-        offer$titre, offer$site, match$score, matched_str, offer$url
+        "🔔 <b>Offre DATA compatible avec ton profil</b>\n\n📌 %s\n🏷️ Source : %s\n%s\n🔗 %s",
+        offer$titre, offer$site, raison, offer$url
       )
       send_telegram(msg)
       n_sent <- n_sent + 1
