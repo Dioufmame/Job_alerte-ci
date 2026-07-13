@@ -108,6 +108,7 @@ SOURCES <- list(
   list(name = "Jobivoire",    url = "https://www.jobivoire.ci/job"),
   list(name = "Projobivoire", url = "https://projobivoire.com/offres-disponibles/"),
   list(name = "Wiijob",       url = "https://wiijob.com/offres-emploi-localisation/cote-divoire/"),
+  list(name = "Talent.com",   url = "https://ci.talent.com/jobs?k=data&l="),
 
   # --- Secteur bancaire (agrégateurs, couvrent la plupart des banques) ---
   list(name = "Emploi.ci - Banque", url = "https://www.emploi.ci/emploi-banque"),
