@@ -11,7 +11,9 @@ permissions:
 
 jobs:
   scrape-and-notify:
-    runs-on: ubuntu-latest
+    # Version d'Ubuntu figée : quand ubuntu-latest change de version, les
+    # packages R compilés en cache ne trouvent plus leurs bibliothèques système.
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
@@ -21,11 +23,16 @@ jobs:
         with:
           r-version: '4.4.0'
 
+      - name: Identifier l'image du runner
+        run: echo "RUNNER_IMAGE=$ImageOS" >> "$GITHUB_ENV"
+
       - name: Cache packages R
         uses: actions/cache@v4
         with:
           path: ${{ env.R_LIBS_USER }}
-          key: r-pkgs-${{ hashFiles('scrape_jobs.R') }}
+          # Le cache dépend de l'image et de la version de R, pour ne jamais
+          # recharger des packages compilés pour un autre système.
+          key: r-pkgs-${{ env.RUNNER_IMAGE }}-R4.4.0-${{ hashFiles('scrape_jobs.R') }}
 
       - name: Installer les dépendances système
         run: |
