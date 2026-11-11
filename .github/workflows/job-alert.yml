@@ -11,37 +11,31 @@ permissions:
 
 jobs:
   scrape-and-notify:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Setup R
-        uses: r-lib/actions/setup-r@v2
-        with:
-          r-version: '4.4.0'
-
-      - name: Identifier l'image du runner
-        run: echo "RUNNER_IMAGE=$ImageOS" >> "$GITHUB_ENV"
+      # R est déjà installé sur l'image ubuntu-24.04 de GitHub : pas besoin
+      # de setup-r ni d'apt-get, qui dépendent des miroirs Ubuntu (ils ont
+      # bloqué les exécutions le 2026-11-11). Version d'Ubuntu figée pour que
+      # les packages binaires en cache restent compatibles.
+      - name: Préparer R
+        run: |
+          echo "R_LIBS_USER=$HOME/R-library" >> "$GITHUB_ENV"
+          echo "R_VER=$(Rscript -e 'cat(as.character(getRversion()))')" >> "$GITHUB_ENV"
+          echo "RUNNER_IMAGE=$ImageOS" >> "$GITHUB_ENV"
+          Rscript --version
 
       - name: Cache packages R
         uses: actions/cache@v4
         with:
           path: ${{ env.R_LIBS_USER }}
-          # Le cache dépend de l'image du runner et de la version de R : quand
-          # ubuntu-latest change de version, le cache est reconstruit au lieu de
-          # recharger des packages compilés pour l'ancien système.
-          key: r-pkgs-${{ env.RUNNER_IMAGE }}-R4.4.0-${{ hashFiles('scrape_jobs.R') }}
-
-      - name: Installer les dépendances système
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libcurl4-openssl-dev libssl-dev libxml2-dev
+          key: r-pkgs-${{ env.RUNNER_IMAGE }}-R${{ env.R_VER }}-${{ hashFiles('scrape_jobs.R', '.github/scripts/install_r_packages.R') }}
 
       - name: Installer les packages R
-        run: |
-          Rscript -e 'install.packages(c("rvest","httr","jsonlite","stringr","dplyr"), repos="https://cloud.r-project.org")'
+        run: Rscript .github/scripts/install_r_packages.R rvest httr jsonlite stringr dplyr xml2
 
       - name: Lancer le scraping et les alertes
         env:
@@ -58,4 +52,6 @@ jobs:
           git config user.email "job-alert-bot@users.noreply.github.com"
           git add data/seen_urls.json
           git diff --quiet --cached || git commit -m "Mise à jour des offres vues [skip ci]"
-          git push
+          # L'autre workflow peut avoir poussé entre-temps
+          git pull --rebase origin "${GITHUB_REF_NAME}"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
