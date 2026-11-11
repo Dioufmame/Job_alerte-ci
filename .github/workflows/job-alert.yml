@@ -13,29 +13,37 @@ jobs:
   scrape-and-notify:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash -el {0}   # active l'environnement R de micromamba
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      # R est déjà installé sur l'image ubuntu-24.04 de GitHub : pas besoin
-      # de setup-r ni d'apt-get, qui dépendent des miroirs Ubuntu (ils ont
-      # bloqué les exécutions le 2026-11-11). Version d'Ubuntu figée pour que
-      # les packages binaires en cache restent compatibles.
-      - name: Préparer R
-        run: |
-          echo "R_LIBS_USER=$HOME/R-library" >> "$GITHUB_ENV"
-          echo "R_VER=$(Rscript -e 'cat(as.character(getRversion()))')" >> "$GITHUB_ENV"
-          echo "RUNNER_IMAGE=$ImageOS" >> "$GITHUB_ENV"
-          Rscript --version
-
-      - name: Cache packages R
-        uses: actions/cache@v4
+      # R et ses packages viennent de conda-forge (micromamba) : binaires
+      # précompilés qui embarquent leurs propres bibliothèques (libxml2, ICU...).
+      # Plus de compilation, plus d'apt-get ni de setup-r, donc plus de panne
+      # quand GitHub change d'image Ubuntu ou que ses miroirs Ubuntu rament.
+      - name: Installer R et les packages
+        uses: mamba-org/setup-micromamba@v2
         with:
-          path: ${{ env.R_LIBS_USER }}
-          key: r-pkgs-${{ env.RUNNER_IMAGE }}-R${{ env.R_VER }}-${{ hashFiles('scrape_jobs.R', '.github/scripts/install_r_packages.R') }}
+          environment-name: r
+          create-args: >-
+            r-base=4.4
+            r-rvest
+            r-xml2
+            r-httr
+            r-jsonlite
+            r-stringr
+            r-dplyr
+          condarc: |
+            channels:
+              - conda-forge
+          cache-environment: true
+          init-shell: bash
 
-      - name: Installer les packages R
-        run: Rscript .github/scripts/install_r_packages.R rvest httr jsonlite stringr dplyr xml2
+      - name: Vérifier que les packages se chargent
+        run: Rscript -e 'for (p in c("rvest","xml2","httr","jsonlite","stringr","dplyr")) suppressPackageStartupMessages(library(p, character.only = TRUE)); cat("Packages R OK\n")'
 
       - name: Lancer le scraping et les alertes
         env:
