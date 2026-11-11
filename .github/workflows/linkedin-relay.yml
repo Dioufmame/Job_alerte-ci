@@ -39,6 +39,7 @@ jobs:
             r-curl
             r-assertthat
             r-magrittr
+            zlib   # en-têtes C nécessaires pour compiler mRpostman
           condarc: |
             channels:
               - conda-forge
@@ -46,7 +47,7 @@ jobs:
           init-shell: bash
 
       # mRpostman n'existe pas sur conda-forge : installé depuis le CRAN
-      # (package 100 % R, ses dépendances sont déjà dans l'environnement)
+      # (compilé sur place, ses dépendances sont déjà dans l'environnement)
       - name: Installer mRpostman et vérifier les packages
         run: |
           Rscript -e 'if (!requireNamespace("mRpostman", quietly = TRUE)) install.packages("mRpostman", repos = "https://cloud.r-project.org")'
