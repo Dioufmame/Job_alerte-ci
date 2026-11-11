@@ -249,7 +249,7 @@ con <- configure_imap(
   password = GMAIL_APP_PASSWORD
 )
 
-con$select_folder(name = "INBOX")
+con$select_folder(folder = "INBOX")
 
 # Date à partir de laquelle on considère les emails (7 jours en arrière,
 # aligné sur MAX_OFFER_AGE_DAYS). On construit la date au format attendu
