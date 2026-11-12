@@ -1,8 +1,14 @@
 name: Relais LinkedIn vers Telegram
 
 on:
-  schedule:
-    - cron: '15 */3 * * *'   # Décalé de 15 min par rapport à l'autre workflow
+  # EN PAUSE : Gmail refuse la connexion (« Login denied »), le mot de passe
+  # d'application GMAIL_APP_PASSWORD n'est plus valide. Pour réactiver :
+  # 1) créer un nouveau mot de passe sur https://myaccount.google.com/apppasswords
+  # 2) le mettre dans Settings → Secrets and variables → Actions → GMAIL_APP_PASSWORD
+  # 3) lancer ce workflow à la main (onglet Actions → Run workflow) pour vérifier
+  # 4) retirer le « # » devant les deux lignes ci-dessous
+  # schedule:
+  #   - cron: '15 */3 * * *'   # Décalé de 15 min par rapport à l'autre workflow
   workflow_dispatch: {}
 
 permissions:
